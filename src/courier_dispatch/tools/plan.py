@@ -10,7 +10,7 @@ BEADS_INSTALL_MSG = (
     "Beads CLI (`bd`) is not installed. Plan tools require Beads.\n\n"
     "Install Beads with:\n"
     "  curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash\n\n"
-    "All other Courier Agent tools work without Beads."
+    "All other Courier Dispatch tools work without Beads."
 )
 
 

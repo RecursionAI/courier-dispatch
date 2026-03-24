@@ -5,16 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from courier_agent.utils.file_utils import (
+from courier_dispatch.utils.file_utils import (
     detect_language,
     get_file_metadata,
     get_gitignore_patterns,
     is_binary_file,
     resolve_safe_path,
     should_ignore,
-    truncate_content,
 )
-from courier_agent.utils.git_utils import has_commits, is_git_repo, run_git
+from courier_dispatch.utils.git_utils import has_commits, is_git_repo, run_git
 
 
 @pytest.fixture
@@ -148,29 +147,6 @@ class TestDetectLanguage:
 
     def test_makefile(self, tmp_path):
         assert detect_language(tmp_path / "Makefile") == "makefile"
-
-
-# --- truncate_content ---
-
-
-class TestTruncateContent:
-    def test_small_content_not_truncated(self):
-        content = "hello world"
-        result, truncated = truncate_content(content)
-        assert result == content
-        assert truncated is False
-
-    def test_large_content_truncated(self):
-        content = "line\n" * 20_000  # ~100KB
-        result, truncated = truncate_content(content, max_bytes=1000)
-        assert truncated is True
-        assert len(result.encode("utf-8")) <= 1000
-
-    def test_truncation_at_line_boundary(self):
-        content = "abcdef\n" * 100
-        result, truncated = truncate_content(content, max_bytes=50)
-        assert truncated is True
-        assert result.endswith("\n") or result.endswith("f")
 
 
 # --- get_file_metadata ---

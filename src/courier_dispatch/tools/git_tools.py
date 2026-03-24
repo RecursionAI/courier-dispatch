@@ -3,8 +3,8 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from courier_agent.utils.file_utils import resolve_safe_path
-from courier_agent.utils.git_utils import has_commits, is_git_repo, run_git
+from courier_dispatch.utils.file_utils import resolve_safe_path
+from courier_dispatch.utils.git_utils import has_commits, is_git_repo, run_git
 
 
 def register_tools(mcp, get_project_root: Callable[[], Path]):

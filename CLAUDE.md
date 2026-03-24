@@ -1,24 +1,24 @@
-# Courier Agent — Build Plan
+# Courier Dispatch — Build Plan
 
 ## Project Overview
 
-**Courier Agent** is an MCP server + Claude skill that transforms the Claude Desktop app (or any MCP-compatible client) into a guided coding assistant. It gives Claude full read-only access to your codebase, structured task management via Beads, and constrained command execution for tests and verification — while deliberately preventing it from writing code. The result: Claude teaches you what to write, reviews what you wrote, runs your tests, and tracks progress — but you remain the developer.
+**Courier Dispatch** is an MCP server + skill that transforms any MCP-compatible AI chat app into a guided coding assistant. It gives the AI full read-only access to your codebase, structured task management via Beads, and constrained command execution for tests and verification — while deliberately preventing it from writing code. The result: the AI teaches you what to write, reviews what you wrote, runs your tests, and tracks progress — but you remain the developer.
 
 ### Architecture
 
 ```
 ┌─────────────────────────────────────┐
-│         Claude Desktop App          │
-│  (or any MCP-compatible client)     │
+│     MCP-compatible AI Chat App      │
+│  (the chat app, Cursor, etc.)     │
 │                                     │
 │  ┌───────────────┐ ┌─────────────┐ │
 │  │  SKILL.md     │ │  MCP Tools  │ │
 │  │  (behavior)   │ │  (access)   │ │
 │  └───────────────┘ └──────┬──────┘ │
 └───────────────────────────┼─────────┘
-                            │ MCP Protocol (stdio)
+                            │ MCP Protocol (HTTP/SSE)
                 ┌───────────┴───────────┐
-                │  courier-agent server │
+                │  dispatch server      │
                 │  (Python binary)      │
                 │                       │
                 │  ┌─────────────────┐  │
@@ -54,9 +54,9 @@
 
 ### Core Principles
 
-1. **Claude cannot write code to files.** No `edit_file`, no `create_file`, no `write_file` tools exist. The user writes all code.
-2. **Claude can run verification commands.** Test runners, linters, type checkers, and build commands are allowed — with human-in-the-loop approval via MCP's built-in confirmation flow. Claude Desktop prompts the user before any command executes.
-3. **Claude cannot use commands to generate or modify code.** The SKILL.md explicitly instructs Claude that `run_command` is for verification only — never for code generation, sed/awk edits, piping output to files, or any form of writing code through shell commands.
+1. **The AI cannot write code to files.** No `edit_file`, no `create_file`, no `write_file` tools exist. The user writes all code.
+2. **The AI can run verification commands.** Test runners, linters, type checkers, and build commands are allowed — with human-in-the-loop approval via MCP's built-in confirmation flow. the chat app prompts the user before any command executes.
+3. **The AI cannot use commands to generate or modify code.** The SKILL.md explicitly instructs the AI that `run_command` is for verification only — never for code generation, sed/awk edits, piping output to files, or any form of writing code through shell commands.
 4. **The skill defines behavior. The server enforces access.** Together they create the guided experience.
 
 ---
@@ -65,10 +65,10 @@
 
 - **Language**: Python 3.11+
 - **MCP SDK**: `mcp` (official Anthropic Python SDK for MCP servers)
-- **Transport**: stdio (local process, launched by Claude Desktop)
+- **Transport**: HTTP/SSE (chat apps connect via URL)
 - **Task tracking**: Beads CLI (`bd`) — optional, installed separately
 - **Git integration**: `gitpython` or subprocess calls to `git`
-- **Distribution**: pip-installable package, single entry point
+- **Distribution**: Standalone binary via PyInstaller, or run from source
 
 ---
 
@@ -77,12 +77,12 @@
 ### 1.1 Initialize the project
 
 ```
-courier-agent/
+courier-dispatch/
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE
 ├── src/
-│   └── courier_agent/
+│   └── courier_dispatch/
 │       ├── __init__.py
 │       ├── server.py          # MCP server entry point
 │       ├── tools/
@@ -97,8 +97,8 @@ courier-agent/
 │           ├── file_utils.py  # Safe path resolution, gitignore filtering
 │           └── git_utils.py   # Git subprocess helpers
 ├── skill/
-│   └── courier-agent/
-│       └── SKILL.md           # The Claude skill file
+│   └── dispatch/
+│       └── SKILL.md           # The AI skill file
 ├── tests/
 │   ├── test_codebase.py
 │   ├── test_git_tools.py
@@ -106,29 +106,30 @@ courier-agent/
 │   ├── test_review.py
 │   └── test_runner.py
 └── scripts/
-    └── install.sh             # Helper to add MCP config to Claude Desktop
+    └── build.sh               # Build standalone binary via PyInstaller
 ```
 
 ### 1.2 pyproject.toml
 
 ```toml
 [project]
-name = "courier-agent"
+name = "courier-dispatch"
 version = "0.1.0"
-description = "MCP server that turns Claude into a guided coding assistant — teaches, reviews, and verifies, but never writes code for you"
+description = "MCP server that turns any AI chat app into a guided coding assistant — teaches, reviews, and verifies, but never writes code for you"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp",
+    "mcp[cli]",
     "gitpython",
+    "uvicorn",
 ]
 
 [project.scripts]
-courier-agent = "courier_agent.server:main"
+dispatch = "courier_dispatch.server:main"
 ```
 
 ### 1.3 Acceptance criteria
 - [ ] Project installs with `pip install -e .`
-- [ ] `courier-agent` command starts without error and outputs MCP handshake
+- [ ] `dispatch` command starts without error and outputs MCP handshake
 - [ ] Skill file exists and has valid YAML frontmatter
 - [ ] All directories and __init__.py files are in place
 
@@ -136,7 +137,7 @@ courier-agent = "courier_agent.server:main"
 
 ## Phase 2: Codebase Tools (Read-Only)
 
-These give Claude the ability to understand and navigate the project.
+These give the AI the ability to understand and navigate the project.
 
 ### 2.1 `list_directory`
 
@@ -184,7 +185,7 @@ These give Claude the ability to understand and navigate the project.
 
 ## Phase 3: Git Tools
 
-These let Claude understand what the user has changed and the history of the code.
+These let the AI understand what the user has changed and the history of the code.
 
 ### 3.1 `get_git_diff`
 
@@ -221,7 +222,7 @@ These let Claude understand what the user has changed and the history of the cod
 
 ## Phase 4: Beads Integration (Plan & Track)
 
-These tools let Claude create and manage structured task plans through Beads. This entire phase is optional — the server works without Beads installed.
+These tools let the AI create and manage structured task plans through Beads. This entire phase is optional — the server works without Beads installed.
 
 ### 4.1 `create_plan`
 
@@ -272,10 +273,10 @@ These power the "review my changes" workflow — the core learning loop.
 
 ### 5.1 `review_changes`
 
-- **Purpose**: Gather all information Claude needs to review the user's code changes
+- **Purpose**: Gather all information the AI needs to review the user's code changes
 - **Parameters**: `bead_id` (string, optional — if provided, scopes review to files relevant to that step)
 - **Returns**: Structured object containing: the git diff, list of changed files with summaries, and if a bead_id is provided, the step's title and description for context
-- **Notes**: This tool gathers information. Claude provides the actual review commentary using its judgment. The tool does NOT evaluate quality — it provides raw material.
+- **Notes**: This tool gathers information. The AI provides the actual review commentary using its judgment. The tool does NOT evaluate quality — it provides raw material.
 
 ### 5.2 `compare_with_context`
 
@@ -294,7 +295,7 @@ These power the "review my changes" workflow — the core learning loop.
 
 ## Phase 6: Command Runner (Constrained Execution)
 
-This gives Claude the ability to run verification commands — tests, linters, type checkers, build steps — with human approval.
+This gives the AI the ability to run verification commands — tests, linters, type checkers, build steps — with human approval.
 
 ### 6.1 `run_command`
 
@@ -303,7 +304,7 @@ This gives Claude the ability to run verification commands — tests, linters, t
 - **Returns**: stdout, stderr, exit code, and execution time
 - **Notes**:
   - Commands execute in the project directory
-  - MCP's built-in human-in-the-loop confirmation applies — Claude Desktop will prompt the user to approve before any command runs
+  - MCP's built-in human-in-the-loop confirmation applies — the chat app will prompt the user to approve before any command runs
   - Timeout prevents runaway processes
   - Command output is captured and returned, not streamed
 
@@ -350,7 +351,7 @@ docker rm, docker rmi, pip install, npm install, apt, brew
 curl -X POST, curl -d, wget --post
 ```
 
-**Configuration**: Users can customize the allowlist/denylist via a `courier-agent.toml` config file in the project root or `~/.config/courier-agent/config.toml`:
+**Configuration**: Users can customize the allowlist/denylist via a `dispatch.toml` config file in the project root or `~/.config/dispatch/config.toml`:
 
 ```toml
 [runner]
@@ -381,12 +382,13 @@ Wire everything together into a functioning MCP server.
 
 ### 7.1 Server entry point (`server.py`)
 
-- Initialize MCP server with stdio transport
+- Initialize MCP server with HTTP/SSE transport
 - Register all tools with JSON Schema parameter definitions
 - Route tool calls to appropriate handlers in the tools/ modules
-- Include server metadata: name="courier-agent", version from package, description
-- Accept project root as first CLI argument (default to cwd)
+- Include server metadata: name="courier-dispatch", version from package, description
+- Accept project root as positional arg (default to cwd), --host and --port flags
 - On startup: detect available capabilities (git, beads, ripgrep) and log status
+- Print startup message: `Courier Dispatch running on http://{host}:{port}/sse`
 
 ### 7.2 Auto-detection on startup
 
@@ -395,66 +397,53 @@ The server checks for and reports:
 - **Git**: is this a git repo? (enables git tools)
 - **Beads**: is `bd` in PATH? (enables plan tools)
 - **Ripgrep**: is `rg` in PATH? (enables fast search, else Python fallback)
-- **Config file**: is there a `courier-agent.toml`? (custom runner config)
+- **Config file**: is there a `dispatch.toml`? (custom runner config)
 
-### 7.3 Claude Desktop configuration
+### 7.3 Connecting a chat app
 
-Users add to their `claude_desktop_config.json`:
+Users run `dispatch` in their project directory, then add the server URL as an MCP connector in their chat app:
 
-```json
-{
-  "mcpServers": {
-    "courier-agent": {
-      "command": "courier-agent",
-      "args": ["/path/to/your/project"]
-    }
-  }
-}
+```
+http://localhost:8080/sse
 ```
 
-### 7.4 Install helper script
+### 7.4 Build script
 
-`scripts/install.sh` that:
-1. Installs the package via pip (or detects if already installed)
-2. Detects Claude Desktop config file location:
-   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - Linux: `~/.config/Claude/claude_desktop_config.json`
-   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-3. Prompts user for project path
-4. Adds the MCP server entry to the config JSON (creates file if needed, merges if exists)
-5. Copies SKILL.md to `~/.claude/skills/courier-agent/SKILL.md`
-6. Prints status: what was installed, reminder to restart Claude Desktop, optional Beads install command
+`scripts/build.sh` builds a standalone binary via PyInstaller:
+1. Produces `dist/dispatch` — a single-file binary
+2. Users download and run it, no Python install needed
+3. Or run from source with `pip install -e .` and `dispatch`
 
 ### 7.5 Acceptance criteria
-- [ ] Server starts via stdio and completes MCP protocol handshake
-- [ ] All registered tools appear in Claude Desktop's tool panel
+- [ ] Server starts via HTTP/SSE and is reachable at the configured host:port
+- [ ] All registered tools appear in the chat app's tool panel
 - [ ] Tool calls route correctly and return proper JSON results
 - [ ] Errors in tool handlers are caught and returned as MCP tool errors (server never crashes)
 - [ ] Missing optional dependencies (Beads, ripgrep) degrade gracefully
-- [ ] Install script works on macOS and Linux (Windows via WSL)
+- [ ] Build script produces a working standalone binary
 
 ---
 
 ## Phase 8: The SKILL.md
 
-The behavioral layer that tells Claude HOW to act when Courier Agent tools are available.
+The behavioral layer that tells the AI HOW to act when Courier Dispatch tools are available.
 
 ### 8.1 Location
 
-- Installed globally to `~/.claude/skills/courier-agent/SKILL.md`
-- Also included in repo at `skill/courier-agent/SKILL.md` for project-local use
+- Included in repo at `skill/dispatch/SKILL.md`
+- Can be copied to `~/.claude/skills/dispatch/SKILL.md` for global use
 - Follows the Agent Skills open standard for cross-tool compatibility
 
 ### 8.2 SKILL.md frontmatter
 
 ```yaml
 ---
-name: courier-agent
+name: dispatch
 description: >
-  Guided coding assistant mode. Activates when the courier-agent MCP server is
+  Guided coding assistant mode. Activates when the Courier Dispatch MCP server is
   connected and the user wants to implement code with AI guidance. Use when the
   user says "guide me", "teach me", "walk me through", "let's build together",
-  "help me implement", or invokes /courier-agent. Provides step-by-step
+  "help me implement", or invokes /dispatch. Provides step-by-step
   instructions, code review, test verification, and architectural guidance
   WITHOUT writing code directly to files. The user writes all code.
 ---
@@ -463,7 +452,7 @@ description: >
 ### 8.3 Skill instructions must cover
 
 **Identity and role:**
-- You are a guided coding assistant called Courier Agent
+- You are a guided coding assistant called Courier Dispatch
 - You help the user implement code by teaching, instructing, reviewing, and verifying
 - You never write code to files — the user writes all code
 - You are a senior pair programmer who is navigating while the user drives
@@ -527,8 +516,8 @@ description: >
 - [ ] YAML frontmatter has name and description fields
 - [ ] Follows Agent Skills open standard format
 - [ ] Total skill content is under 5K tokens (fits in progressive disclosure budget)
-- [ ] Manually tested: Claude follows teaching behavior when skill is active
-- [ ] Manually tested: Claude uses `run_command` only for verification, not code modification
+- [ ] Manually tested: AI follows teaching behavior when skill is active
+- [ ] Manually tested: AI uses `run_command` only for verification, not code modification
 - [ ] Manually tested: graduated hint system works across multiple "give me a hint" requests
 - [ ] Manually tested: escape hatch works and tracks step as AI-assisted
 
@@ -558,23 +547,22 @@ description: >
 
 ### 9.3 Documentation
 - [ ] README.md with:
-  - What Courier Agent is and why it exists
-  - Quick install (pip install + config snippet)
+  - What Courier Dispatch is and why it exists
+  - Quick start (download binary or build from source → `dispatch` → connect chat app)
   - Example workflow walkthrough
-  - Configuration reference (courier-agent.toml)
+  - Configuration reference (dispatch.toml)
   - Optional dependencies (Beads, ripgrep)
 - [ ] Screenshots or terminal recording of a guided session
 - [ ] Troubleshooting section covering common MCP connection issues
 - [ ] CONTRIBUTING.md for open source contributors
 
 ### 9.4 Distribution
-- [ ] Published to PyPI as `courier-agent`
-- [ ] `pip install courier-agent` installs cleanly
-- [ ] `courier-agent --version` prints version
-- [ ] `courier-agent --help` prints usage
-- [ ] Install script handles Claude Desktop config on macOS and Linux
-- [ ] Skill file included in package data and copied during install
-- [ ] GitHub repo with CI (tests on push)
+- [ ] `scripts/build.sh` produces a working standalone `dispatch` binary
+- [ ] `dispatch --version` prints version
+- [ ] `dispatch --help` prints usage
+- [ ] `dispatch` starts HTTP/SSE server on default port
+- [ ] Binary works without Python installed on the target machine
+- [ ] GitHub repo with CI (tests on push, binary builds on release)
 
 ---
 
@@ -615,17 +603,19 @@ Phases 2, 3, 4, and 6 can be built in parallel — they all depend only on Phase
 
 ---
 
-## Quick Start for Claude Code
-
-Feed this plan to Claude Code to begin building:
+## Quick Start for Development
 
 ```bash
-# Option 1: Direct
-claude "Read courier-agent-plan.md and let's start building. Begin with Phase 1."
+# Clone and install
+git clone https://github.com/your-org/courier-dispatch.git
+cd courier-dispatch
+pip install -e .
 
-# Option 2: With Beads tracking (eat your own dog food)
-bd init
-claude "Read courier-agent-plan.md. Create Beads epics for each phase, then start implementing Phase 1."
+# Run the server
+dispatch /path/to/project
+
+# Build standalone binary
+./scripts/build.sh
 ```
 
 Work through phases sequentially (or parallelize 2/3/4/6). Each phase has acceptance criteria — verify all criteria are met before moving to the next phase.

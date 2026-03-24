@@ -5,12 +5,11 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from courier_agent.utils.file_utils import (
+from courier_dispatch.utils.file_utils import (
     is_binary_file,
     resolve_safe_path,
-    truncate_content,
 )
-from courier_agent.utils.git_utils import has_commits, is_git_repo, run_git
+from courier_dispatch.utils.git_utils import has_commits, is_git_repo, run_git
 
 
 def _parse_imports(content: str, language: str) -> list[str]:
@@ -153,11 +152,12 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
         return "\n\n".join(sections)
 
     @mcp.tool()
-    def compare_with_context(file_path: str) -> str:
+    def compare_with_context(file_path: str, max_import_lines: int = 100) -> str:
         """Show a changed file alongside its imported dependencies for broader context.
 
         Args:
             file_path: Path to the file to analyze, relative to project root.
+            max_import_lines: Maximum lines to show from each imported file (default: 100).
         """
         root = get_project_root()
         resolved = resolve_safe_path(file_path, root)
@@ -176,10 +176,7 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
         except OSError as e:
             return f"Error reading '{file_path}': {e}"
 
-        content, was_truncated = truncate_content(content)
         sections.append(f"File: {file_path}\n{'─' * 60}\n{content}")
-        if was_truncated:
-            sections[-1] += "\n\n⚠ File truncated at 50KB"
 
         # Get diff if in a git repo
         if is_git_repo(root) and has_commits(root):
@@ -222,11 +219,11 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
                 for imp_name, imp_path in resolved_imports:
                     try:
                         imp_content = imp_path.read_text(encoding="utf-8", errors="replace")
-                        # Show first 50 lines of each imported file
-                        lines = imp_content.splitlines()[:50]
+                        all_imp_lines = imp_content.splitlines()
+                        lines = all_imp_lines[:max_import_lines]
                         preview = "\n".join(lines)
-                        if len(imp_content.splitlines()) > 50:
-                            preview += f"\n... ({len(imp_content.splitlines()) - 50} more lines)"
+                        if len(all_imp_lines) > max_import_lines:
+                            preview += f"\n... ({len(all_imp_lines) - max_import_lines} more lines)"
                         rel_path = imp_path.relative_to(root)
                         sections.append(
                             f"\n{imp_name} → {rel_path}\n{'─' * 40}\n{preview}"

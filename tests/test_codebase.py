@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from courier_agent.tools.codebase import register_tools
+from courier_dispatch.tools.codebase import register_tools
 
 
 @pytest.fixture
@@ -140,9 +140,24 @@ class TestReadFile:
         result = tools["read_file"](path="missing.txt")
         assert "Error" in result
 
-    def test_truncation(self, tools):
+    def test_large_file_no_truncation(self, tools):
+        """Large files are returned in full — no artificial truncation."""
         result = tools["read_file"](path="big.txt")
-        assert "truncated" in result.lower()
+        assert "truncated" not in result.lower()
+
+    def test_large_file_reports_real_line_count(self, tools, codebase_project):
+        lines = [f"line {i}" for i in range(1, 5001)]
+        (codebase_project / "large.py").write_text("\n".join(lines))
+        result = tools["read_file"](path="large.py")
+        assert "Lines: 5000" in result
+
+    def test_large_file_line_range(self, tools, codebase_project):
+        lines = [f"line content number {i:05d}" for i in range(1, 5001)]
+        (codebase_project / "large.py").write_text("\n".join(lines))
+        result = tools["read_file"](path="large.py", start_line=4900, end_line=4950)
+        assert "04900" in result
+        assert "04950" in result
+        assert "Showing lines 4900-4950 of 5000" in result
 
     def test_path_traversal_blocked(self, tools):
         with pytest.raises(ValueError):
@@ -164,10 +179,42 @@ class TestSearchCode:
         assert "app.py" in result
 
     def test_max_results(self, tools):
-        # max_results caps the number of returned matches
         result = tools["search_code"](pattern="def", max_results=1)
-        # Should have at least one result but be limited
         assert "match" in result.lower()
+
+    def test_context_lines(self, tools):
+        result = tools["search_code"](
+            pattern="def hello", context_before=2, context_after=2,
+        )
+        assert "app.py" in result
+        # Should contain the match line and surrounding context lines
+        assert "def hello" in result
+        assert 'return f"Hello' in result
+
+    def test_case_insensitive(self, tools):
+        result = tools["search_code"](pattern="DEF HELLO", case_sensitive=False)
+        assert "app.py" in result
+
+    def test_case_sensitive_default(self, tools):
+        result = tools["search_code"](pattern="DEF HELLO")
+        assert "No matches" in result
+
+    def test_output_mode_files_only(self, tools):
+        result = tools["search_code"](pattern="def", output_mode="files_only")
+        assert "app.py" in result
+        assert "utils.py" in result
+        # Should NOT contain line numbers or content
+        assert ":" not in result.split("\n\n", 1)[-1].replace(":\n", "")
+
+    def test_output_mode_count(self, tools):
+        result = tools["search_code"](pattern="def", output_mode="count")
+        assert "app.py" in result
+        # Should show counts
+        assert "Match counts" in result
+
+    def test_invalid_output_mode(self, tools):
+        result = tools["search_code"](pattern="def", output_mode="invalid")
+        assert "Error" in result
 
 
 class TestFindDefinition:
@@ -197,6 +244,12 @@ class TestFindDefinition:
     def test_file_glob_filter(self, tools):
         result = tools["find_definition"](symbol="hello", file_glob="*.py")
         assert "app.py" in result
+
+    def test_custom_context_lines(self, tools):
+        # With 0 context lines, should still show the definition line
+        result = tools["find_definition"](symbol="hello", context_lines=0)
+        assert "app.py" in result
+        assert "def hello" in result
 
 
 class TestGetFileInfo:

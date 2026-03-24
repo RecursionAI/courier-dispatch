@@ -7,14 +7,13 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from courier_agent.utils.file_utils import (
+from courier_dispatch.utils.file_utils import (
     detect_language,
     get_file_metadata,
     get_gitignore_patterns,
     is_binary_file,
     resolve_safe_path,
     should_ignore,
-    truncate_content,
 )
 
 
@@ -107,12 +106,11 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
         except OSError as e:
             return f"Error reading '{path}': {e}"
 
-        content, was_truncated = truncate_content(content)
-
+        # Split into lines BEFORE truncation so we know the real line count
         all_lines = content.splitlines()
         total_lines = len(all_lines)
 
-        # Apply line range
+        # Apply line range BEFORE truncation so we can read any part of the file
         if start_line is not None or end_line is not None:
             start = max(1, start_line or 1)
             end = min(total_lines, end_line or total_lines)
@@ -135,10 +133,8 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
             f"{'─' * 60}\n"
         )
         footer = ""
-        if was_truncated:
-            footer = f"\n{'─' * 60}\n⚠ File truncated at 50KB (total size: {meta['size_display']})"
         if start_line is not None or end_line is not None:
-            footer += f"\nShowing lines {line_offset}-{line_offset + len(selected) - 1} of {total_lines}"
+            footer = f"\nShowing lines {line_offset}-{line_offset + len(selected) - 1} of {total_lines}"
 
         return header + "\n".join(numbered) + footer
 
@@ -146,33 +142,62 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
     def search_code(
         pattern: str,
         file_glob: str = "",
-        max_results: int = 20,
+        max_results: int = 50,
+        context_before: int = 0,
+        context_after: int = 0,
+        case_sensitive: bool = True,
+        output_mode: str = "content",
     ) -> str:
         """Search for a pattern across the codebase (grep-style).
 
         Args:
             pattern: Regex pattern to search for.
             file_glob: Optional file glob filter (e.g., '*.py').
-            max_results: Maximum number of results to return (default: 20).
+            max_results: Maximum number of results to return (default: 50).
+            context_before: Number of lines to show before each match (default: 0).
+            context_after: Number of lines to show after each match (default: 0).
+            case_sensitive: Whether the search is case-sensitive (default: true).
+            output_mode: 'content' (matching lines), 'files_only' (file paths), or 'count' (match counts per file).
         """
         root = get_project_root()
 
-        # Try ripgrep first
+        if output_mode not in ("content", "files_only", "count"):
+            return f"Error: output_mode must be 'content', 'files_only', or 'count'"
+
         if shutil.which("rg"):
-            return _search_with_ripgrep(pattern, file_glob, max_results, root)
+            return _search_with_ripgrep(
+                pattern, file_glob, max_results, root,
+                context_before, context_after, case_sensitive, output_mode,
+            )
         else:
-            return _search_with_python(pattern, file_glob, max_results, root)
+            return _search_with_python(
+                pattern, file_glob, max_results, root,
+                context_before, context_after, case_sensitive, output_mode,
+            )
 
     def _search_with_ripgrep(
         pattern: str, file_glob: str, max_results: int, root: Path,
+        context_before: int, context_after: int,
+        case_sensitive: bool, output_mode: str,
     ) -> str:
-        cmd = [
-            "rg", "--line-number", "--no-heading",
-            "--max-count", str(max_results),
-            "--color", "never",
-        ]
+        cmd = ["rg", "--color", "never"]
+
+        if output_mode == "files_only":
+            cmd.append("--files-with-matches")
+        elif output_mode == "count":
+            cmd.append("--count")
+        else:
+            cmd.extend(["--line-number", "--no-heading"])
+            if context_before > 0:
+                cmd.extend(["-B", str(context_before)])
+            if context_after > 0:
+                cmd.extend(["-A", str(context_after)])
+
+        if not case_sensitive:
+            cmd.append("-i")
         if file_glob:
             cmd.extend(["--glob", file_glob])
+
         cmd.append(pattern)
 
         try:
@@ -187,28 +212,53 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
         if result.returncode > 1:
             return f"Search error: {result.stderr.strip()}"
 
-        lines = result.stdout.strip().splitlines()
-        if len(lines) > max_results:
-            lines = lines[:max_results]
+        output = result.stdout.strip()
+        lines = output.splitlines()
 
-        count = len(lines)
-        header = f"Found {count} match{'es' if count != 1 else ''} for '{pattern}':\n\n"
+        if output_mode == "content" and context_before == 0 and context_after == 0:
+            # Only limit results when no context (context makes line counting unreliable)
+            if len(lines) > max_results:
+                lines = lines[:max_results]
+
+        if output_mode == "files_only":
+            if len(lines) > max_results:
+                lines = lines[:max_results]
+            count = len(lines)
+            header = f"Found {count} file{'s' if count != 1 else ''} matching '{pattern}':\n\n"
+        elif output_mode == "count":
+            header = f"Match counts for '{pattern}':\n\n"
+        else:
+            count = len([l for l in lines if l and not l.startswith("--")])
+            header = f"Found {count} match{'es' if count != 1 else ''} for '{pattern}':\n\n"
+
         return header + "\n".join(lines)
 
     def _search_with_python(
         pattern: str, file_glob: str, max_results: int, root: Path,
+        context_before: int, context_after: int,
+        case_sensitive: bool, output_mode: str,
     ) -> str:
+        flags = 0 if case_sensitive else re.IGNORECASE
         try:
-            regex = re.compile(pattern)
+            regex = re.compile(pattern, flags)
         except re.error as e:
             return f"Invalid regex pattern: {e}"
 
         ignore_patterns = get_gitignore_patterns(root)
-        matches = []
+
+        if output_mode == "files_only":
+            matched_files = []
+        elif output_mode == "count":
+            file_counts: dict[str, int] = {}
+        else:
+            matches = []
+
+        done = False
 
         for dirpath, dirnames, filenames in os.walk(root):
+            if done:
+                break
             dp = Path(dirpath)
-            # Filter ignored directories in-place
             dirnames[:] = [
                 d for d in dirnames
                 if not should_ignore(dp / d, root, ignore_patterns)
@@ -216,6 +266,8 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
             ]
 
             for fname in filenames:
+                if done:
+                    break
                 fpath = dp / fname
                 if should_ignore(fpath, root, ignore_patterns):
                     continue
@@ -229,32 +281,73 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
                 except OSError:
                     continue
 
-                for line_num, line in enumerate(text.splitlines(), 1):
-                    if regex.search(line):
-                        rel = fpath.relative_to(root)
-                        matches.append(f"{rel}:{line_num}: {line.strip()}")
-                        if len(matches) >= max_results:
+                rel = str(fpath.relative_to(root))
+                all_lines = text.splitlines()
+
+                if output_mode == "files_only":
+                    for line in all_lines:
+                        if regex.search(line):
+                            matched_files.append(rel)
+                            if len(matched_files) >= max_results:
+                                done = True
                             break
-                if len(matches) >= max_results:
-                    break
 
-        if not matches:
-            return "No matches found."
+                elif output_mode == "count":
+                    count = sum(1 for line in all_lines if regex.search(line))
+                    if count > 0:
+                        file_counts[rel] = count
 
-        count = len(matches)
-        header = f"Found {count} match{'es' if count != 1 else ''} for '{pattern}':\n\n"
-        return header + "\n".join(matches)
+                else:
+                    for line_num, line in enumerate(all_lines, 1):
+                        if regex.search(line):
+                            if context_before > 0 or context_after > 0:
+                                start = max(0, line_num - 1 - context_before)
+                                end = min(len(all_lines), line_num + context_after)
+                                context = []
+                                for i in range(start, end):
+                                    marker = ">" if i == line_num - 1 else " "
+                                    context.append(f"{marker} {rel}:{i + 1}: {all_lines[i]}")
+                                matches.append("\n".join(context))
+                            else:
+                                matches.append(f"{rel}:{line_num}: {line.strip()}")
+                            if len(matches) >= max_results:
+                                done = True
+                                break
+
+        if output_mode == "files_only":
+            if not matched_files:
+                return "No matches found."
+            count = len(matched_files)
+            header = f"Found {count} file{'s' if count != 1 else ''} matching '{pattern}':\n\n"
+            return header + "\n".join(matched_files)
+
+        elif output_mode == "count":
+            if not file_counts:
+                return "No matches found."
+            header = f"Match counts for '{pattern}':\n\n"
+            lines = [f"{path}: {count}" for path, count in file_counts.items()]
+            return header + "\n".join(lines)
+
+        else:
+            if not matches:
+                return "No matches found."
+            count = len(matches)
+            separator = "\n--\n" if (context_before > 0 or context_after > 0) else "\n"
+            header = f"Found {count} match{'es' if count != 1 else ''} for '{pattern}':\n\n"
+            return header + separator.join(matches)
 
     @mcp.tool()
     def find_definition(
         symbol: str,
         file_glob: str = "",
+        context_lines: int = 5,
     ) -> str:
         """Find where a symbol (function, class, variable) is defined.
 
         Args:
             symbol: The symbol name to search for.
             file_glob: Optional file glob filter (e.g., '*.py').
+            context_lines: Number of lines to show above and below the definition (default: 5).
         """
         root = get_project_root()
         ignore_patterns = get_gitignore_patterns(root)
@@ -275,7 +368,6 @@ def register_tools(mcp, get_project_root: Callable[[], Path]):
         regex = re.compile(combined)
 
         results = []
-        context_lines = 5
 
         for dirpath, dirnames, filenames in os.walk(root):
             dp = Path(dirpath)

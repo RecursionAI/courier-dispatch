@@ -8,7 +8,7 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-from courier_agent.utils.file_utils import resolve_safe_path
+from courier_dispatch.utils.file_utils import resolve_safe_path
 
 # Default allowlist — regex patterns matched against the command prefix
 DEFAULT_ALLOWED = [
@@ -63,9 +63,9 @@ def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
 
 
 def _load_config(project_root: Path) -> dict:
-    """Load courier-agent.toml config if it exists.
+    """Load dispatch.toml config if it exists.
 
-    Checks project root first, then ~/.config/courier-agent/config.toml.
+    Checks project root first, then ~/.config/dispatch/config.toml.
     """
     config = {
         "extra_allowed": [],
@@ -74,8 +74,8 @@ def _load_config(project_root: Path) -> dict:
     }
 
     paths = [
-        project_root / "courier-agent.toml",
-        Path.home() / ".config" / "courier-agent" / "config.toml",
+        project_root / "dispatch.toml",
+        Path.home() / ".config" / "dispatch" / "config.toml",
     ]
 
     for config_path in paths:
@@ -127,7 +127,7 @@ def _check_command(
     return False, (
         f"Command not in allowlist: '{command}'\n"
         "To allow this command, add it to the [runner] extra_allowed list "
-        "in courier-agent.toml in your project root."
+        "in dispatch.toml in your project root."
     )
 
 

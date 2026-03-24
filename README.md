@@ -1,46 +1,55 @@
-# Courier Agent
+# Courier Dispatch
 
-MCP server that turns Claude into a guided coding assistant — teaches, reviews, and verifies, but never writes code for you.
+MCP server that turns any AI chat app into a guided coding assistant — teaches, reviews, and verifies, but never writes code for you.
 
 ## What It Does
 
-Courier Agent gives Claude read-only access to your codebase, structured task management, and constrained command execution. Claude teaches you what to write, reviews what you wrote, runs your tests, and tracks progress — but you remain the developer.
+Courier Dispatch gives your AI assistant read-only access to your codebase, structured task management, and constrained command execution. The AI teaches you what to write, reviews what you wrote, runs your tests, and tracks progress — but you remain the developer.
 
-**Core principle:** Claude cannot write code to files. You write all the code.
+**Core principle:** The AI cannot write code to files. You write all the code.
 
-## Quick Install
-
-```bash
-pip install courier-agent
-```
-
-Or install from source:
+## Install
 
 ```bash
-git clone https://github.com/your-org/courier-agent.git
-cd courier-agent
+git clone https://github.com/recursion-ai/courier-dispatch.git
+cd courier-dispatch
 pip install -e .
 ```
 
-## Claude Desktop Setup
+This makes the `dispatch` command available globally.
 
-Add to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "courier-agent": {
-      "command": "courier-agent",
-      "args": ["/path/to/your/project"]
-    }
-  }
-}
-```
-
-Or use the install helper:
+## Quick Start
 
 ```bash
-./scripts/install.sh
+# In any project directory
+dispatch
+
+# Or specify a project path and port
+dispatch /path/to/project --port 9090
+```
+
+This starts an MCP server at `http://localhost:8080/sse` (default). Add that URL as a connector in your MCP-compatible chat app.
+
+### Skill Setup (Claude Desktop)
+
+To get the guided teaching behavior (graduated hints, code review workflow, escape hatch), install the skill:
+
+```bash
+mkdir -p ~/.claude/skills/dispatch
+cp skill/dispatch/SKILL.md ~/.claude/skills/dispatch/SKILL.md
+```
+
+Restart Claude Desktop. The skill activates when you say "guide me", "teach me", or "help me implement".
+
+### Options
+
+```
+dispatch [PROJECT_ROOT] [--host HOST] [--port PORT] [--version]
+
+PROJECT_ROOT   Path to the project directory (default: current directory)
+--host         Host to bind to (default: 0.0.0.0)
+--port         Port to listen on (default: 8080)
+--version      Show version and exit
 ```
 
 ## Tools
@@ -73,7 +82,7 @@ Or use the install helper:
 
 ## Configuration
 
-Create `courier-agent.toml` in your project root:
+Create `dispatch.toml` in your project root:
 
 ```toml
 [runner]
@@ -86,6 +95,16 @@ timeout = 180
 
 - **[Beads](https://github.com/steveyegge/beads)** — Structured task tracking
 - **[ripgrep](https://github.com/BurntSushi/ripgrep)** — Faster code search
+
+## Standalone Binary
+
+To build a single-file binary (no Python required on the target machine):
+
+```bash
+pip install -e ".[dev]"
+./scripts/build.sh
+# Binary at dist/dispatch
+```
 
 ## Development
 

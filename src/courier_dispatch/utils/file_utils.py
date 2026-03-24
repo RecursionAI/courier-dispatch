@@ -207,30 +207,6 @@ def detect_language(path: Path) -> str:
     return LANGUAGE_MAP.get(suffix, "unknown")
 
 
-def truncate_content(content: str, max_bytes: int = 50_000) -> tuple[str, bool]:
-    """Truncate content if it exceeds max_bytes.
-
-    Args:
-        content: The text content to potentially truncate.
-        max_bytes: Maximum allowed size in bytes.
-
-    Returns:
-        Tuple of (content, was_truncated).
-    """
-    encoded = content.encode("utf-8", errors="replace")
-    if len(encoded) <= max_bytes:
-        return content, False
-
-    # Truncate at byte boundary, then decode safely
-    truncated = encoded[:max_bytes].decode("utf-8", errors="ignore")
-    # Find last complete line
-    last_newline = truncated.rfind("\n")
-    if last_newline > 0:
-        truncated = truncated[:last_newline]
-
-    return truncated, True
-
-
 def get_file_metadata(path: Path) -> dict:
     """Get metadata about a file.
 

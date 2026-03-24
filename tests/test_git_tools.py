@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from courier_agent.tools.git_tools import register_tools
+from courier_dispatch.tools.git_tools import register_tools
 
 
 @pytest.fixture

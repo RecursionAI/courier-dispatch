@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from courier_agent.tools.review import register_tools, _parse_imports, _resolve_import_path
+from courier_dispatch.tools.review import register_tools, _parse_imports, _resolve_import_path
 
 
 @pytest.fixture
@@ -197,3 +197,13 @@ class TestCompareWithContext:
         (git_project / "main.py").write_text("# changed content\n")
         result = tools["compare_with_context"](file_path="main.py")
         assert "Changes" in result or "changed" in result
+
+    def test_custom_import_preview_lines(self, tools, git_project):
+        # Create a file with many lines
+        (git_project / "big_utils.py").write_text("\n".join(
+            [f"# line {i}" for i in range(200)]
+        ))
+        (git_project / "importer.py").write_text("from big_utils import something\n")
+        # With max_import_lines=10, should truncate the preview
+        result = tools["compare_with_context"](file_path="importer.py", max_import_lines=10)
+        assert "190 more lines" in result
