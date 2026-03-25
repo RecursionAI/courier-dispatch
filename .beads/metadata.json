@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "courier_dispatch",
+  "project_id": "6f3741a6-bad4-4313-98a2-45714e99c1c4"
+}
