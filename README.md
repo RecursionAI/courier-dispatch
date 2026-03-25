@@ -41,10 +41,50 @@ cp skill/dispatch/SKILL.md ~/.claude/skills/dispatch/SKILL.md
 
 Restart Claude Desktop. The skill activates when you say "guide me", "teach me", or "help me implement".
 
+### Auto-Tunneling with ngrok
+
+Courier Dispatch can automatically create an ngrok tunnel when the server starts, exposing it to the internet without manual ngrok setup. This is useful for connecting remote MCP clients or sharing your session.
+
+1. Get an auth token from [ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken)
+2. Configure it:
+
+```bash
+dispatch config set ngrok.authtoken YOUR_NGROK_AUTH_TOKEN
+
+# Optional: use a reserved domain (requires ngrok paid plan)
+dispatch config set ngrok.domain your-domain.ngrok-free.app
+```
+
+3. Start the server as usual:
+
+```bash
+dispatch
+```
+
+If an auth token is configured, the tunnel starts automatically and prints the public URL:
+
+```
+ngrok tunnel: https://your-domain.ngrok-free.app/sse
+Courier Dispatch running on http://0.0.0.0:8080/sse
+```
+
+Use the ngrok URL as your MCP connector in remote chat apps. If the tunnel fails to start, the server continues running locally.
+
+To check your current config:
+
+```bash
+dispatch config list
+dispatch config get ngrok.domain
+```
+
 ### Options
 
 ```
 dispatch [PROJECT_ROOT] [--host HOST] [--port PORT] [--version]
+dispatch serve [PROJECT_ROOT] [--host HOST] [--port PORT]
+dispatch config set <key> <value>
+dispatch config get <key>
+dispatch config list
 
 PROJECT_ROOT   Path to the project directory (default: current directory)
 --host         Host to bind to (default: 0.0.0.0)
@@ -82,7 +122,15 @@ PROJECT_ROOT   Path to the project directory (default: current directory)
 
 ## Configuration
 
-Create `dispatch.toml` in your project root:
+Configuration is stored at `~/.config/dispatch/config.toml` and managed via the CLI:
+
+```bash
+dispatch config set <key> <value>
+dispatch config get <key>
+dispatch config list
+```
+
+You can also create a project-level `dispatch.toml` in your project root for runner settings (project config takes precedence):
 
 ```toml
 [runner]
@@ -91,8 +139,17 @@ extra_denied = ["specific-dangerous-command"]
 timeout = 180
 ```
 
+### ngrok config
+
+```toml
+[ngrok]
+authtoken = "your-ngrok-auth-token"
+domain = "your-domain.ngrok-free.app"  # optional
+```
+
 ## Optional Dependencies
 
+- **[ngrok](https://ngrok.com)** — Auto-tunneling for remote access (configured via `dispatch config`)
 - **[Beads](https://github.com/steveyegge/beads)** — Structured task tracking
 - **[ripgrep](https://github.com/BurntSushi/ripgrep)** — Faster code search
 

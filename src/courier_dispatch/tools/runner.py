@@ -4,10 +4,10 @@ import re
 import shlex
 import subprocess
 import time
-import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
+from courier_dispatch.utils.config import load_project_config
 from courier_dispatch.utils.file_utils import resolve_safe_path
 
 # Default allowlist — regex patterns matched against the command prefix
@@ -63,35 +63,8 @@ def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
 
 
 def _load_config(project_root: Path) -> dict:
-    """Load dispatch.toml config if it exists.
-
-    Checks project root first, then ~/.config/dispatch/config.toml.
-    """
-    config = {
-        "extra_allowed": [],
-        "extra_denied": [],
-        "timeout": 120,
-    }
-
-    paths = [
-        project_root / "dispatch.toml",
-        Path.home() / ".config" / "dispatch" / "config.toml",
-    ]
-
-    for config_path in paths:
-        if config_path.is_file():
-            try:
-                with open(config_path, "rb") as f:
-                    data = tomllib.load(f)
-                runner = data.get("runner", {})
-                config["extra_allowed"] = runner.get("extra_allowed", [])
-                config["extra_denied"] = runner.get("extra_denied", [])
-                config["timeout"] = runner.get("timeout", 120)
-                break  # Use first config found
-            except (tomllib.TOMLDecodeError, OSError):
-                pass
-
-    return config
+    """Load runner config from dispatch.toml or user config."""
+    return load_project_config(project_root)
 
 
 def _check_command(

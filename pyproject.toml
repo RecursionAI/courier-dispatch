@@ -8,6 +8,8 @@ dependencies = [
     "mcp[cli]",
     "gitpython",
     "uvicorn",
+    "ngrok>=1.4.0",
+    "tomli-w>=1.0.0",
 ]
 
 [project.scripts]
